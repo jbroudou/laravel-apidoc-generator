@@ -62,10 +62,12 @@ class Generator
         $docBlock = $this->parseDocBlock($method);
         $bodyParameters = $this->getBodyParameters($method, $docBlock['tags']);
         $queryParameters = $this->getQueryParameters($method, $docBlock['tags']);
+        $responsePropParameters = $this->getResponsePropParameters($method, $docBlock['tags']);
         $content = ResponseResolver::getResponse($route, $docBlock['tags'], [
             'rules' => $rulesToApply,
             'body' => $bodyParameters,
             'query' => $queryParameters,
+            'responseProp' => $responsePropParameters,
         ]);
 
         $parsedRoute = [
@@ -84,6 +86,7 @@ class Generator
             'authenticated' => $this->getAuthStatusFromDocBlock($docBlock['tags']),
             'response' => $content,
             'showresponse' => ! empty($content),
+            'responsePropParameters' => $responsePropParameters
         ];
         $parsedRoute['headers'] = $rulesToApply['headers'] ?? [];
 
@@ -154,6 +157,69 @@ class Generator
                 $value = is_null($example) ? $this->generateDummyValue($type) : $example;
 
                 return [$name => compact('type', 'description', 'required', 'value')];
+            })->toArray();
+
+        return $parameters;
+    }
+
+    protected function getResponsePropParameters(ReflectionMethod $method, array $tags)
+    {
+        foreach ($method->getParameters() as $param) {
+            $paramType = $param->getType();
+            if ($paramType === null) {
+                continue;
+            }
+
+            $parameterClassName = version_compare(phpversion(), '7.1.0', '<')
+                ? $paramType->__toString()
+                : $paramType->getName();
+
+            try {
+                $parameterClass = new ReflectionClass($parameterClassName);
+            } catch (\ReflectionException $e) {
+                continue;
+            }
+
+            if (class_exists('\Illuminate\Foundation\Http\FormRequest') && $parameterClass->isSubclassOf(\Illuminate\Foundation\Http\FormRequest::class) || class_exists('\Dingo\Api\Http\FormRequest') && $parameterClass->isSubclassOf(\Dingo\Api\Http\FormRequest::class)) {
+                $formRequestDocBlock = new DocBlock($parameterClass->getDocComment());
+                $bodyParametersFromDocBlock = $this->getBodyParametersFromDocBlock($formRequestDocBlock->getTags());
+
+                if (count($bodyParametersFromDocBlock)) {
+                    return $bodyParametersFromDocBlock;
+                }
+            }
+        }
+
+        return $this->getResponsePropParametersFromDocBlock($tags);
+    }
+
+    /**
+     * @param array $tags
+     *
+     * @return array
+     */
+    protected function getResponsePropParametersFromDocBlock(array $tags)
+    {
+        $parameters = collect($tags)
+            ->filter(function ($tag) {
+                return $tag instanceof Tag && $tag->getName() === 'responseProp';
+            })
+            ->mapWithKeys(function ($tag) {
+                preg_match('/(.+?)\s+(.+?)\s+(.*)/', $tag->getContent(), $content);
+                if (empty($content)) {
+                    // this means only name and type were supplied
+                    list($name, $type) = preg_split('/\s+/', $tag->getContent());                    
+                    $description = '';
+                } else {
+                    list($_, $name, $type, $description) = $content;
+                    $description = trim($description);                                        
+                }
+
+                $type = $this->normalizeParameterType($type);
+                list($description, $example) = $this->parseDescription($description, $type);
+                $value = is_null($example) ? $this->generateDummyValue($type) : $example;
+
+                return [$name => compact('type', 'description', 'value')];
             })->toArray();
 
         return $parameters;
