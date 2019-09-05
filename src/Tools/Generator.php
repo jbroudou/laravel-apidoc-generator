@@ -5,6 +5,7 @@ namespace Mpociot\ApiDoc\Tools;
 use Faker\Factory;
 use ReflectionClass;
 use ReflectionMethod;
+use Illuminate\Support\Str;
 use Illuminate\Routing\Route;
 use Mpociot\Reflection\DocBlock;
 use Mpociot\Reflection\DocBlock\Tag;
@@ -57,9 +58,8 @@ class Generator
         $controller = new ReflectionClass($class);
         $method = $controller->getMethod($method);
 
-        list($routeGroupName, $routeGroupDescription) = $this->getRouteGroup($controller, $method);
-
         $docBlock = $this->parseDocBlock($method);
+        list($routeGroupName, $routeGroupDescription, $routeTitle) = $this->getRouteGroup($controller, $docBlock);
         $bodyParameters = $this->getBodyParameters($method, $docBlock['tags']);
         $queryParameters = $this->getQueryParameters($method, $docBlock['tags']);
         $responsePropParameters = $this->getResponsePropParameters($method, $docBlock['tags']);
@@ -74,7 +74,7 @@ class Generator
             'id' => md5($this->getUri($route).':'.implode($this->getMethods($route))),
             'groupName' => $routeGroupName,
             'groupDescription' => $routeGroupDescription,
-            'title' => $docBlock['short'],
+            'title' => $routeTitle ?: $docBlock['short'],
             'description' => $docBlock['long'],
             'methods' => $this->getMethods($route),
             'uri' => $this->getUri($route),
@@ -137,6 +137,7 @@ class Generator
             })
             ->mapWithKeys(function ($tag) {
                 preg_match('/(.+?)\s+(.+?)\s+(required\s+)?(.*)/', $tag->getContent(), $content);
+                $content = preg_replace('/\s?No-example.?/', '', $content);
                 if (empty($content)) {
                     // this means only name and type were supplied
                     list($name, $type) = preg_split('/\s+/', $tag->getContent());
@@ -154,7 +155,7 @@ class Generator
 
                 $type = $this->normalizeParameterType($type);
                 list($description, $example) = $this->parseDescription($description, $type);
-                $value = is_null($example) ? $this->generateDummyValue($type) : $example;
+                $value = is_null($example) && ! $this->shouldExcludeExample($tag) ? $this->generateDummyValue($type) : $example;
 
                 return [$name => compact('type', 'description', 'required', 'value')];
             })->toArray();
@@ -275,6 +276,7 @@ class Generator
             })
             ->mapWithKeys(function ($tag) {
                 preg_match('/(.+?)\s+(required\s+)?(.*)/', $tag->getContent(), $content);
+                $content = preg_replace('/\s?No-example.?/', '', $content);
                 if (empty($content)) {
                     // this means only name was supplied
                     list($name) = preg_split('/\s+/', $tag->getContent());
@@ -291,8 +293,8 @@ class Generator
                 }
 
                 list($description, $value) = $this->parseDescription($description, 'string');
-                if (is_null($value)) {
-                    $value = str_contains($description, ['number', 'count', 'page'])
+                if (is_null($value) && ! $this->shouldExcludeExample($tag)) {
+                    $value = Str::contains($description, ['number', 'count', 'page'])
                         ? $this->generateDummyValue('integer')
                         : $this->generateDummyValue('string');
                 }
@@ -337,24 +339,41 @@ class Generator
 
     /**
      * @param ReflectionClass $controller
-     * @param ReflectionMethod $method
+     * @param array $methodDocBlock
      *
-     * @return array The route group name and description
+     * @return array The route group name, the group description, ad the route title
      */
-    protected function getRouteGroup(ReflectionClass $controller, ReflectionMethod $method)
+    protected function getRouteGroup(ReflectionClass $controller, array $methodDocBlock)
     {
         // @group tag on the method overrides that on the controller
-        $docBlockComment = $method->getDocComment();
-        if ($docBlockComment) {
-            $phpdoc = new DocBlock($docBlockComment);
-            foreach ($phpdoc->getTags() as $tag) {
+        if (! empty($methodDocBlock['tags'])) {
+            foreach ($methodDocBlock['tags'] as $tag) {
                 if ($tag->getName() === 'group') {
-                    $routeGroup = trim($tag->getContent());
-                    $routeGroupParts = explode("\n", $tag->getContent());
+                    $routeGroupParts = explode("\n", trim($tag->getContent()));
                     $routeGroupName = array_shift($routeGroupParts);
-                    $routeGroupDescription = implode("\n", $routeGroupParts);
+                    $routeGroupDescription = trim(implode("\n", $routeGroupParts));
 
-                    return [$routeGroupName, $routeGroupDescription];
+                    // If the route has no title (aka "short"),
+                    // we'll assume the routeGroupDescription is actually the title
+                    // Something like this:
+                    // /**
+                    //   * Fetch cars. <-- This is route title.
+                    //   * @group Cars <-- This is group name.
+                    //   * APIs for cars. <-- This is group description (not required).
+                    //   **/
+                    // VS
+                    // /**
+                    //   * @group Cars <-- This is group name.
+                    //   * Fetch cars. <-- This is route title, NOT group description.
+                    //   **/
+
+                    // BTW, this is a spaghetti way of doing this.
+                    // It shall be refactored soon. Deus vult!💪
+                    if (empty($methodDocBlock['short'])) {
+                        return [$routeGroupName, '', $routeGroupDescription];
+                    }
+
+                    return [$routeGroupName, $routeGroupDescription, $methodDocBlock['short']];
                 }
             }
         }
@@ -364,16 +383,16 @@ class Generator
             $phpdoc = new DocBlock($docBlockComment);
             foreach ($phpdoc->getTags() as $tag) {
                 if ($tag->getName() === 'group') {
-                    $routeGroupParts = explode("\n", $tag->getContent());
+                    $routeGroupParts = explode("\n", trim($tag->getContent()));
                     $routeGroupName = array_shift($routeGroupParts);
                     $routeGroupDescription = implode("\n", $routeGroupParts);
 
-                    return [$routeGroupName, $routeGroupDescription];
+                    return [$routeGroupName, $routeGroupDescription, $methodDocBlock['short']];
                 }
             }
         }
 
-        return [$this->config->get(('default_group')), ''];
+        return [$this->config->get(('default_group')), '', $methodDocBlock['short']];
     }
 
     private function normalizeParameterType($type)
@@ -442,6 +461,19 @@ class Generator
         }
 
         return [$description, $example];
+    }
+
+    /**
+     * Allows users to specify that we shouldn't generate an example for the parameter
+     * by writing 'No-example'.
+     *
+     * @param Tag $tag
+     *
+     * @return bool Whether no example should be generated
+     */
+    private function shouldExcludeExample(Tag $tag)
+    {
+        return strpos($tag->getContent(), ' No-example') !== false;
     }
 
     /**

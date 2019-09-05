@@ -34,6 +34,38 @@ class TestController extends Controller
     }
 
     /**
+     * This is also in Group B. No route description. Route title before gropp.
+     *
+     * @group Group B
+     */
+    public function withGroupOverride2()
+    {
+        return '';
+    }
+
+    /**
+     * @group Group B
+     *
+     * This is also in Group B. Route title after group.
+     */
+    public function withGroupOverride3()
+    {
+        return '';
+    }
+
+    /**
+     * This is in Group C. Route title before group.
+     *
+     * @group Group C
+     *
+     * Group description after group.
+     */
+    public function withGroupOverride4()
+    {
+        return '';
+    }
+
+    /**
      * @bodyParam user_id int required The id of the user. Example: 9
      * @bodyParam room_id string The id of the room.
      * @bodyParam forever boolean Whether to ban the user forever. Example: false
@@ -78,6 +110,16 @@ class TestController extends Controller
      * @queryParam url_encoded  Used for testing that URL parameters will be URL-encoded where needed. Example: + []&=
      */
     public function withQueryParameters()
+    {
+        return '';
+    }
+
+    /**
+     * @bodyParam included string required Exists in examples. Example: 'Here'
+     * @bodyParam  excluded_body_param int Does not exist in examples. No-example
+     * @queryParam excluded_query_param Does not exist in examples. No-example
+     */
+    public function withExcludedExamples()
     {
         return '';
     }

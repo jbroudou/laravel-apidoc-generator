@@ -2,6 +2,7 @@
 
 namespace Mpociot\ApiDoc\Tools;
 
+use Illuminate\Support\Str;
 use Illuminate\Routing\Route;
 use Dingo\Api\Routing\RouteCollection;
 use Illuminate\Support\Facades\Route as RouteFacade;
@@ -48,6 +49,9 @@ class RouteMatcher
         return $matchedRoutes;
     }
 
+    // TODO we should cache the results of this, for Laravel routes at least,
+    // to improve performance, since this method gets called
+    // for each ruleset in the config file. Not a high priority, though.
     private function getAllRoutes(bool $usingDingoRouter, array $versions = [])
     {
         if (! $usingDingoRouter) {
@@ -68,10 +72,10 @@ class RouteMatcher
             ? ! empty(array_intersect($route->versions(), $routeRule['match']['versions'] ?? []))
             : true;
 
-        return str_is($mustIncludes, $route->getName())
-            || str_is($mustIncludes, $route->uri())
-            || (str_is($routeRule['match']['domains'] ?? [], $route->getDomain())
-            && str_is($routeRule['match']['prefixes'] ?? [], $route->uri())
+        return Str::is($mustIncludes, $route->getName())
+            || Str::is($mustIncludes, $route->uri())
+            || (Str::is($routeRule['match']['domains'] ?? [], $route->getDomain())
+            && Str::is($routeRule['match']['prefixes'] ?? [], $route->uri())
             && $matchesVersion);
     }
 
@@ -79,7 +83,7 @@ class RouteMatcher
     {
         $excludes = $routeRule['exclude'] ?? [];
 
-        return str_is($excludes, $route->getName())
-            || str_is($excludes, $route->uri());
+        return Str::is($excludes, $route->getName())
+            || Str::is($excludes, $route->uri());
     }
 }

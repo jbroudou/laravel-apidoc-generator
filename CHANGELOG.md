@@ -12,6 +12,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Removed
+c-generator/pull/575)
+
+## [3.16.3] - Thursday, 5 September 2019
+### Fixed
+- Removed references to removed helper functions in 6.0 (https://github.com/mpociot/laravel-apidoc-generator/pull/576)
+
+## [3.16.2] - Wednesday, 4 September 2019
+### Fixed
+- Support for Laravel 6 (https://github.com/mpociot/laravel-apidoc-generator/commit/f7dd8d19b75755763e8e20ab4025075eba5cd51a)
+
+## [3.16.1] - Wednesday, 4 September 2019
+### Added
+- Use HTTPS in Postman collection if base_url is HTTPS (https://github.com/mpociot/laravel-apidoc-generator/pull/575)
+
+## [3.16.0] - Wednesday, 4 September 2019
+### Added
+- Support for Laravel 6 (https://github.com/mpociot/laravel-apidoc-generator/pull/572)
+
+## [3.15.0] - Saturday, 31 August 2019
+### Added
+- Ability to exclude a query or body parameter from being included in the example requests (https://github.com/mpociot/laravel-apidoc-generator/pull/552)
+
+## [3.14.0] - Saturday, 31 August 2019
+### Fixed
+- Backwards compatibility for the changes to `@group` introduced in 3.12.0 (https://github.com/mpociot/laravel-apidoc-generator/commit/5647eda35ebb7f8aed35b31790c5f220b736e985)
+
+## [3.13.0] (deleted)
 
 ## [3.12.0] - Sunday, 25 August 2019
 ### Fixed
