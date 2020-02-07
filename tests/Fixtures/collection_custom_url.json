@@ -14,36 +14,54 @@
                 {
                     "name": "Example title.",
                     "request": {
-                        "url": "http:\/\/yourapp.app\/api\/test",
+                        "url": {
+                            "protocol": "http",
+                            "host": "yourapp.app",
+                            "path": "api/test",
+                            "query": []
+                        },
                         "method": "GET",
                         "header": [
                             {
+                                "key": "Content-Type",
+                                "value": "application\/json"
+                            },
+                            {
                                 "key": "Accept",
-                                "value": "application/json"
+                                "value": "application\/json"
                             }
                         ],
                         "body": {
-                            "mode": "formdata",
-                            "formdata": []
+                            "mode": "raw",
+                            "raw": "[]"
                         },
                         "description": "This will be the long description.\nIt can also be multiple lines long.",
                         "response": []
                     }
                 },
                 {
-                    "name": "http:\/\/yourapp.app\/api\/responseTag",
+                    "name": "api\/responseTag",
                     "request": {
-                        "url": "http:\/\/yourapp.app\/api\/responseTag",
+                        "url": {
+                            "protocol": "http",
+                            "host": "yourapp.app",
+                            "path": "api/responseTag",
+                            "query": []
+                        },
                         "method": "POST",
                         "header": [
                             {
+                                "key": "Content-Type",
+                                "value": "application\/json"
+                            },
+                            {
                                 "key": "Accept",
-                                "value": "application/json"
+                                "value": "application\/json"
                             }
                         ],
                         "body": {
-                            "mode": "formdata",
-                            "formdata": []
+                            "mode": "raw",
+                            "raw": "[]"
                         },
                         "description": "",
                         "response": []

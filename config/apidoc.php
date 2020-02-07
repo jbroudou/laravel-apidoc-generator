@@ -1,12 +1,36 @@
 <?php
 
 return [
+    /*
+     * The type of documentation output to generate.
+     * - "static" will generate a static HTMl page in the /public/docs folder,
+     * - "laravel" will generate the documentation as a Blade view,
+     * so you can add routing and authentication.
+     */
+    'type' => 'static',
 
     /*
-     * The output path for the generated documentation.
-     * This path should be relative to the root of your application.
+     * Settings for `laravel` type output.
      */
-    'output' => 'public/docs',
+    'laravel' => [
+        /*
+         * Whether to automatically create a docs endpoint for you to view your generated docs.
+         * If this is false, you can still set up routing manually.
+         */
+        'autoload' => false,
+
+        /*
+         * URL path to use for the docs endpoint (if `autoload` is true).
+         *
+         * By default, `/doc` opens the HTML page, and `/doc.json` downloads the Postman collection.
+         */
+        'docs_url' => '/doc',
+
+        /*
+         * Middleware to attach to the docs endpoint (if `autoload` is true).
+         */
+        'middleware' => [],
+    ],
 
     /*
      * The router to be used (Laravel or Dingo).
@@ -21,6 +45,9 @@ return [
 
     /*
      * Generate a Postman collection in addition to HTML docs.
+     * For 'static' docs, the collection will be generated to public/docs/collection.json.
+     * For 'laravel' docs, it will be generated to storage/app/apidoc/collection.json.
+     * The `ApiDoc::routes()` helper will add routes for both the HTML and the Postman collection.
      */
     'postman' => [
         /*
@@ -37,6 +64,12 @@ return [
          * The description for the exported Postman collection.
          */
         'description' => null,
+
+        /*
+         * The "Auth" section that should appear in the postman collection. See the schema docs for more information:
+         * https://schema.getpostman.com/json/collection/v2.0.0/docs/index.html
+         */
+        'auth' => null,
     ],
 
     /*
@@ -103,6 +136,8 @@ return [
                  * Specify headers to be added to the example requests
                  */
                 'headers' => [
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
                     // 'Authorization' => 'Bearer {token}',
                     // 'Api-Version' => 'v2',
                 ],
@@ -120,20 +155,6 @@ return [
                     'methods' => ['GET'],
 
                     /*
-                     * For URLs which have parameters (/users/{user}, /orders/{id?}),
-                     * specify what values the parameters should be replaced with.
-                     * Note that you must specify the full parameter,
-                     * including curly brackets and question marks if any.
-                     *
-                     * You may also specify the preceding path, to allow for variations,
-                     * for instance 'users/{id}' => 1 and 'apps/{id}' => 'htTviP'.
-                     * However, there must only be one parameter per path.
-                     */
-                    'bindings' => [
-                        // '{user}' => 1,
-                    ],
-
-                    /*
                      * Laravel config variables which should be set for the API call.
                      * This is a good place to ensure that notifications, emails
                      * and other external services are not triggered
@@ -146,15 +167,6 @@ return [
                     ],
 
                     /*
-                     * Headers which should be sent with the API call.
-                     */
-                    'headers' => [
-                        'Content-Type' => 'application/json',
-                        'Accept' => 'application/json',
-                        // 'key' => 'value',
-                    ],
-
-                    /*
                      * Cookies which should be sent with the API call.
                      */
                     'cookies' => [
@@ -164,18 +176,43 @@ return [
                     /*
                      * Query parameters which should be sent with the API call.
                      */
-                    'query' => [
+                    'queryParams' => [
                         // 'key' => 'value',
                     ],
 
                     /*
                      * Body parameters which should be sent with the API call.
                      */
-                    'body' => [
+                    'bodyParams' => [
                         // 'key' => 'value',
                     ],
                 ],
             ],
+        ],
+    ],
+
+    'strategies' => [
+        'metadata' => [
+            \Mpociot\ApiDoc\Extracting\Strategies\Metadata\GetFromDocBlocks::class,
+        ],
+        'urlParameters' => [
+            \Mpociot\ApiDoc\Extracting\Strategies\UrlParameters\GetFromUrlParamTag::class,
+        ],
+        'queryParameters' => [
+            \Mpociot\ApiDoc\Extracting\Strategies\QueryParameters\GetFromQueryParamTag::class,
+        ],
+        'headers' => [
+            \Mpociot\ApiDoc\Extracting\Strategies\RequestHeaders\GetFromRouteRules::class,
+        ],
+        'bodyParameters' => [
+            \Mpociot\ApiDoc\Extracting\Strategies\BodyParameters\GetFromBodyParamTag::class,
+        ],
+        'responses' => [
+            \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseTransformerTags::class,
+            \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseResponseTag::class,
+            \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseResponseFileTag::class,
+            \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseApiResourceTags::class,
+            \Mpociot\ApiDoc\Extracting\Strategies\Responses\ResponseCalls::class,
         ],
     ],
 
@@ -234,4 +271,11 @@ return [
      *
      */
     'faker_seed' => null,
+
+    /*
+     * If you would like to customize how routes are matched beyond the route configuration you may
+     * declare your own implementation of RouteMatcherInterface
+     *
+     */
+    'routeMatcher' => \Mpociot\ApiDoc\Matching\RouteMatcher::class,
 ];

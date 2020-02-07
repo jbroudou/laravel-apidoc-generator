@@ -12,9 +12,14 @@
             "description": "",
             "item": [
                 {
-                    "name": "http://localhost/api/headers",
+                    "name": "api\/headers",
                     "request": {
-                        "url": "http:\/\/localhost\/api\/headers",
+                        "url": {
+                            "protocol": "http",
+                            "host": "localhost",
+                            "path": "api/headers",
+                            "query": []
+                        },
                         "method": "GET",
                         "header": [
                             {
@@ -27,12 +32,12 @@
                             },
                             {
                                 "key": "Accept",
-                                "value": "application/json"
+                                "value": "application\/json"
                             }
                         ],
                         "body": {
-                            "mode": "formdata",
-                            "formdata": []
+                            "mode": "raw",
+                            "raw": "[]"
                         },
                         "description": "",
                         "response": []
