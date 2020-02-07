@@ -1,42 +1,56 @@
 <?php
 
-namespace Mpociot\ApiDoc\Tools\ResponseStrategies;
+namespace Mpociot\ApiDoc\Extracting\Strategies\Responses;
 
 use Dingo\Api\Dispatcher;
-use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Str;
+use Mpociot\ApiDoc\Extracting\ParamHelpers;
+use Mpociot\ApiDoc\Extracting\Strategies\Strategy;
 use Mpociot\ApiDoc\Tools\Flags;
 use Mpociot\ApiDoc\Tools\Utils;
-use Mpociot\ApiDoc\Tools\Traits\ParamHelpers;
 
 /**
  * Make a call to the route and retrieve its response.
  */
-class ResponseCallStrategy
+class ResponseCalls extends Strategy
 {
     use ParamHelpers;
 
     /**
      * @param Route $route
-     * @param array $tags
-     * @param array $routeProps
+     * @param \ReflectionClass $controller
+     * @param \ReflectionMethod $method
+     * @param array $routeRules
+     * @param array $context
      *
      * @return array|null
      */
-    public function __invoke(Route $route, array $tags, array $routeProps)
+    public function __invoke(Route $route, \ReflectionClass $controller, \ReflectionMethod $method, array $routeRules, array $context = [])
     {
-        $rulesToApply = $routeProps['rules']['response_calls'] ?? [];
-        if (! $this->shouldMakeApiCall($route, $rulesToApply)) {
+        $rulesToApply = $routeRules['response_calls'] ?? [];
+        if (! $this->shouldMakeApiCall($route, $rulesToApply, $context)) {
             return null;
         }
 
         $this->configureEnvironment($rulesToApply);
-        $request = $this->prepareRequest($route, $rulesToApply, $routeProps['body'], $routeProps['query']);
+
+        // Mix in parsed parameters with manually specified parameters.
+        $bodyParameters = array_merge($context['cleanBodyParameters'], $rulesToApply['bodyParams'] ?? []);
+        $queryParameters = array_merge($context['cleanQueryParameters'], $rulesToApply['queryParams'] ?? []);
+        $urlParameters = $context['cleanUrlParameters'];
+        $request = $this->prepareRequest($route, $rulesToApply, $urlParameters, $bodyParameters, $queryParameters, $context['headers'] ?? []);
 
         try {
-            $response = [$this->makeApiCall($request)];
+            $response = $this->makeApiCall($request);
+            $response = [
+                [
+                    'status' => $response->getStatusCode(),
+                    'content' => $response->getContent(),
+                ],
+            ];
         } catch (\Exception $e) {
             echo 'Exception thrown during response call for ['.implode(',', $route->methods)."] {$route->uri}.\n";
             if (Flags::$shouldBeVerbose) {
@@ -72,18 +86,23 @@ class ResponseCallStrategy
      *
      * @return Request
      */
-    protected function prepareRequest(Route $route, array $rulesToApply, array $bodyParams, array $queryParams)
+    protected function prepareRequest(Route $route, array $rulesToApply, array $urlParams, array $bodyParams, array $queryParams, array $headers)
     {
-        $uri = Utils::getFullUrl($route, $rulesToApply['bindings'] ?? []);
+        $uri = Utils::getFullUrl($route, $urlParams);
         $routeMethods = $this->getMethods($route);
         $method = array_shift($routeMethods);
         $cookies = isset($rulesToApply['cookies']) ? $rulesToApply['cookies'] : [];
-        $request = Request::create($uri, $method, [], $cookies, [], $this->transformHeadersToServerVars($rulesToApply['headers'] ?? []));
-        $request = $this->addHeaders($request, $route, $rulesToApply['headers'] ?? []);
 
-        // Mix in parsed parameters with manually specified parameters.
-        $queryParams = collect($this->cleanParams($queryParams))->merge($rulesToApply['query'] ?? [])->toArray();
-        $bodyParams = collect($this->cleanParams($bodyParams))->merge($rulesToApply['body'] ?? [])->toArray();
+        // Note that we initialise the request with the bodyPatams here
+        // and later still add them to the ParameterBag (`addBodyParameters`)
+        // The first is so the body params get added to the request content
+        // (where Laravel reads body from)
+        // The second is so they get added to the request bag
+        // (where Symfony usually reads from and Laravel sometimes does)
+        // Adding to both ensures consistency
+        $request = Request::create($uri, $method, [], $cookies, [], $this->transformHeadersToServerVars($headers), json_encode($bodyParams));
+        // Doing it again to catch any ones we didn't transform properly.
+        $request = $this->addHeaders($request, $route, $headers);
 
         $request = $this->addQueryParameters($request, $queryParams);
         $request = $this->addBodyParameters($request, $bodyParams);
@@ -96,7 +115,7 @@ class ResponseCallStrategy
      *
      * @return void
      *
-     * @deprecated in favour of Laravel config variables
+     * @deprecated Not guaranteed to overwrite application's env. Use Laravel config variables instead.
      */
     private function setEnvironmentVariables(array $env)
     {
@@ -282,9 +301,16 @@ class ResponseCallStrategy
      */
     protected function callLaravelRoute(Request $request): \Symfony\Component\HttpFoundation\Response
     {
-        $kernel = app(\Illuminate\Contracts\Http\Kernel::class);
-        $response = $kernel->handle($request);
-        $kernel->terminate($request, $response);
+        // Confirm we're running in Laravel, not Lumen
+        if (app()->bound(\Illuminate\Contracts\Http\Kernel::class)) {
+            $kernel = app(\Illuminate\Contracts\Http\Kernel::class);
+            $response = $kernel->handle($request);
+            $kernel->terminate($request, $response);
+        } else {
+            // Handle the request using the Lumen application.
+            $kernel = app();
+            $response = $kernel->handle($request);
+        }
 
         return $response;
     }
@@ -295,10 +321,18 @@ class ResponseCallStrategy
      *
      * @return bool
      */
-    private function shouldMakeApiCall(Route $route, array $rulesToApply): bool
+    protected function shouldMakeApiCall(Route $route, array $rulesToApply, array $context): bool
     {
         $allowedMethods = $rulesToApply['methods'] ?? [];
         if (empty($allowedMethods)) {
+            return false;
+        }
+
+        // Don't attempt a response call if there are already successful responses
+        $successResponses = collect($context['responses'])->filter(function ($response) {
+            return ((string) $response['status'])[0] == '2';
+        })->count();
+        if ($successResponses) {
             return false;
         }
 

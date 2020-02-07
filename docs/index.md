@@ -1,14 +1,16 @@
 # Overview
 
-Automatically generate your API documentation from your existing Laravel/Lumen/[Dingo](https://github.com/dingo/api) routes. [Here's what the output looks like](http://marcelpociot.de/whiteboard/).
+Automatically generate your API documentation from your existing Laravel/Lumen/[Dingo](https://github.com/dingo/api) routes. [Here's what the output looks like](https://shalvah.me/TheCensorshipAPI/).
 
 `php artisan apidoc:generate`
 
 ## Contents
 * [How This Works](description.md)
 * [Configuration](config.md)
+* [Migrating from v3 to v4](migrating.md)
 * [Generating Documentation](generating-documentation.md)
 * [Documenting Your API](documenting.md)
+* [Extending functionality with plugins](plugins.md)
 * [Internal Architecture](architecture.md)
 
 ## Installation

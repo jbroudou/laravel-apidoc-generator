@@ -4,6 +4,7 @@ namespace Mpociot\ApiDoc\Tests\Fixtures;
 
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Mpociot\ApiDoc\Tests\Unit\GeneratorTestCase;
 
 /**
  * @group Group A
@@ -30,7 +31,7 @@ class TestController extends Controller
      */
     public function withGroupOverride()
     {
-        return '';
+        return 'Group B, baby!';
     }
 
     /**
@@ -66,12 +67,16 @@ class TestController extends Controller
     }
 
     /**
+     * Endpoint with body parameters.
+     *
      * @bodyParam user_id int required The id of the user. Example: 9
      * @bodyParam room_id string The id of the room.
      * @bodyParam forever boolean Whether to ban the user forever. Example: false
      * @bodyParam another_one number Just need something here.
-     * @bodyParam yet_another_param object required
-     * @bodyParam even_more_param array
+     * @bodyParam yet_another_param object required Some object params.
+     * @bodyParam yet_another_param.name string required Subkey in the object param.
+     * @bodyParam even_more_param array Some array params.
+     * @bodyParam even_more_param.* float Subkey in the array param.
      * @bodyParam book.name string
      * @bodyParam book.author_id integer
      * @bodyParam book[pages_count] integer
@@ -132,6 +137,41 @@ class TestController extends Controller
         return '';
     }
 
+    /**
+     * @apiResource \Mpociot\ApiDoc\Tests\Fixtures\TestUserApiResource
+     * @apiResourceModel \Mpociot\ApiDoc\Tests\Fixtures\TestUser
+     */
+    public function withEloquentApiResource()
+    {
+        return new TestUserApiResource(factory(TestUser::class)->make(['id' => 0]));
+    }
+
+    /**
+     * @group Other😎
+     *
+     * @apiResourceCollection Mpociot\ApiDoc\Tests\Fixtures\TestUserApiResource
+     * @apiResourceModel Mpociot\ApiDoc\Tests\Fixtures\TestUser
+     */
+    public function withEloquentApiResourceCollection()
+    {
+        return TestUserApiResource::collection(
+            collect([factory(TestUser::class)->make(['id' => 0])])
+        );
+    }
+
+    /**
+     * @group Other😎
+     *
+     * @apiResourceCollection Mpociot\ApiDoc\Tests\Fixtures\TestUserApiResourceCollection
+     * @apiResourceModel Mpociot\ApiDoc\Tests\Fixtures\TestUser
+     */
+    public function withEloquentApiResourceCollectionClass()
+    {
+        return new TestUserApiResourceCollection(
+            collect([factory(TestUser::class)->make(['id' => 0])])
+        );
+    }
+
     public function checkCustomHeaders(Request $request)
     {
         return $request->headers->all();
@@ -152,6 +192,7 @@ class TestController extends Controller
             'color' => strtolower($fruit->color),
             'weight' => $fruit->weight.' kg',
             'delicious' => $fruit->delicious,
+            'responseCall' => true,
         ];
     }
 
@@ -162,18 +203,27 @@ class TestController extends Controller
         ];
     }
 
-    public function echoesUrlPathParameters($param)
+    /**
+     * @group Other😎
+     *
+     * @urlParam param required Example: 4
+     * @urlParam param2
+     * @urlParam param4 No-example.
+     *
+     * @queryParam something
+     */
+    public function echoesUrlParameters($param, $param2, $param3 = null, $param4 = null)
     {
-        return [
-            'param' => $param,
-        ];
+        return compact('param', 'param2', 'param3', 'param4');
     }
 
+    /**
+     * @urlparam $id Example: 3
+     */
     public function shouldFetchRouteResponseWithEchoedSettings($id)
     {
         return [
             '{id}' => $id,
-            'APP_ENV' => getenv('APP_ENV'),
             'header' => request()->header('header'),
             'queryParam' => request()->query('queryParam'),
             'bodyParam' => request()->get('bodyParam'),
@@ -203,11 +253,14 @@ class TestController extends Controller
      *   "name": "banana",
      *   "color": "red",
      *   "weight": "1 kg",
-     *   "delicious": true
+     *   "delicious": true,
+     *   "responseTag": true
      * }
      */
     public function withResponseTag()
     {
+        GeneratorTestCase::$globalValue = rand();
+
         return '';
     }
 
@@ -227,7 +280,8 @@ class TestController extends Controller
      *   "name": "banana",
      *   "color": "red",
      *   "weight": "1 kg",
-     *   "delicious": true
+     *   "delicious": true,
+     *   "multipleResponseTagsAndStatusCodes": true
      * }
      * @response 401 {
      *   "message": "Unauthorized"
@@ -242,6 +296,14 @@ class TestController extends Controller
      * @transformer \Mpociot\ApiDoc\Tests\Fixtures\TestTransformer
      */
     public function transformerTag()
+    {
+        return '';
+    }
+
+    /**
+     * @transformer 201 \Mpociot\ApiDoc\Tests\Fixtures\TestTransformer
+     */
+    public function transformerTagWithStatusCode()
     {
         return '';
     }
@@ -293,6 +355,14 @@ class TestController extends Controller
      * @responseFile response_test.json {"message" : "Serendipity"}
      */
     public function responseFileTagAndCustomJson()
+    {
+        return '';
+    }
+
+    /**
+     * @responseFile i-do-not-exist.json
+     */
+    public function withNonExistentResponseFile()
     {
         return '';
     }

@@ -2,29 +2,31 @@
 
 namespace Mpociot\ApiDoc\Tools;
 
-use Illuminate\Support\Str;
 use Illuminate\Routing\Route;
-use League\Flysystem\Filesystem;
 use League\Flysystem\Adapter\Local;
+use League\Flysystem\Filesystem;
 use Symfony\Component\Console\Output\ConsoleOutput;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\VarExporter\VarExporter;
 
 class Utils
 {
-    public static function getFullUrl(Route $route, array $bindings = []): string
+    public static function getFullUrl(Route $route, array $urlParameters = []): string
     {
         $uri = $route->uri();
 
-        return self::replaceUrlParameterBindings($uri, $bindings);
+        return self::replaceUrlParameterPlaceholdersWithValues($uri, $urlParameters);
     }
 
     /**
-     * @param array $action
+     * @param array|Route $routeOrAction
      *
      * @return array|null
      */
-    public static function getRouteActionUses(array $action)
+    public static function getRouteClassAndMethodNames($routeOrAction)
     {
+        $action = $routeOrAction instanceof Route ? $routeOrAction->getAction() : $routeOrAction;
+
         if ($action['uses'] !== null) {
             if (is_array($action['uses'])) {
                 return $action['uses'];
@@ -42,28 +44,31 @@ class Utils
 
     /**
      * Transform parameters in URLs into real values (/users/{user} -> /users/2).
-     * Uses bindings specified by caller, otherwise just uses '1'.
+     * Uses @urlParam values specified by caller, otherwise just uses '1'.
      *
      * @param string $uri
-     * @param array $bindings
+     * @param array $urlParameters Dictionary of url params and example values
      *
      * @return mixed
      */
-    public static function replaceUrlParameterBindings(string $uri, array $bindings)
+    public static function replaceUrlParameterPlaceholdersWithValues(string $uri, array $urlParameters)
     {
-        foreach ($bindings as $path => $binding) {
-            // So we can support partial bindings like
-            // 'bindings' => [
-            //  'foo/{type}' => 4,
-            //  'bar/{type}' => 2
-            //],
-            if (Str::is("*$path*", $uri)) {
-                preg_match('/({.+?})/', $path, $parameter);
-                $uri = str_replace("{$parameter['1']}", $binding, $uri);
+        $matches = preg_match_all('/{.+?}/i', $uri, $parameterPaths);
+        if (! $matches) {
+            return $uri;
+        }
+
+        foreach ($parameterPaths[0] as $parameterPath) {
+            $key = trim($parameterPath, '{?}');
+            if (isset($urlParameters[$key])) {
+                $example = $urlParameters[$key];
+                $uri = str_replace($parameterPath, $example, $uri);
             }
         }
-        // Replace any unbound parameters with '1'
-        $uri = preg_replace('/{(.+?)}/', '1', $uri);
+        // Remove unbound optional parameters with nothing
+        $uri = preg_replace('#{([^/]+\?)}#', '', $uri);
+        // Replace any unbound non-optional parameters with '1'
+        $uri = preg_replace('#{([^/]+)}#', '1', $uri);
 
         return $uri;
     }
@@ -87,5 +92,27 @@ class Utils
         $adapter = new Local(realpath(__DIR__.'/../../'));
         $fs = new Filesystem($adapter);
         $fs->deleteDir($dir);
+    }
+
+    /**
+     * @param mixed $value
+     * @param int $indentationLevel
+     *
+     * @throws \Symfony\Component\VarExporter\Exception\ExceptionInterface
+     *
+     * @return string
+     */
+    public static function printPhpValue($value, $indentationLevel = 0)
+    {
+        $output = VarExporter::export($value);
+        // Padding with x spaces so they align
+        $split = explode("\n", $output);
+        $result = '';
+        $padWith = str_repeat(' ', $indentationLevel);
+        foreach ($split as $index => $line) {
+            $result .= ($index == 0 ? '' : "\n$padWith").$line;
+        }
+
+        return $result;
     }
 }

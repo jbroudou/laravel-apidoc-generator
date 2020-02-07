@@ -3,8 +3,10 @@
 namespace Mpociot\ApiDoc;
 
 use Illuminate\Support\ServiceProvider;
-use Mpociot\ApiDoc\Commands\RebuildDocumentation;
 use Mpociot\ApiDoc\Commands\GenerateDocumentation;
+use Mpociot\ApiDoc\Commands\RebuildDocumentation;
+use Mpociot\ApiDoc\Matching\RouteMatcher;
+use Mpociot\ApiDoc\Matching\RouteMatcherInterface;
 
 class ApiDocGeneratorServiceProvider extends ServiceProvider
 {
@@ -18,14 +20,16 @@ class ApiDocGeneratorServiceProvider extends ServiceProvider
         $this->loadViewsFrom(__DIR__.'/../resources/views/', 'apidoc');
 
         $this->publishes([
-            __DIR__.'/../resources/views' => app()->basePath().'/resources/views/vendor/apidoc',
+            __DIR__.'/../resources/views' => $this->app->basePath('resources/views/vendor/apidoc'),
         ], 'apidoc-views');
 
         $this->publishes([
-            __DIR__.'/../config/apidoc.php' => app()->basePath().'/config/apidoc.php',
+            __DIR__.'/../config/apidoc.php' => $this->app->configPath('apidoc.php'),
         ], 'apidoc-config');
 
         $this->mergeConfigFrom(__DIR__.'/../config/apidoc.php', 'apidoc');
+
+        $this->bootRoutes();
 
         if ($this->app->runningInConsole()) {
             $this->commands([
@@ -33,15 +37,23 @@ class ApiDocGeneratorServiceProvider extends ServiceProvider
                 RebuildDocumentation::class,
             ]);
         }
+
+        // Bind the route matcher implementation
+        $this->app->bind(RouteMatcherInterface::class, config('apidoc.routeMatcher', RouteMatcher::class));
     }
 
     /**
-     * Register the API doc commands.
-     *
-     * @return void
+     * Initializing routes in the application.
      */
-    public function register()
+    protected function bootRoutes()
     {
-        //
+        if (
+            config('apidoc.type', 'static') === 'laravel' &&
+            config('apidoc.laravel.autoload', false)
+        ) {
+            $this->loadRoutesFrom(
+                __DIR__.'/../routes/laravel.php'
+            );
+        }
     }
 }

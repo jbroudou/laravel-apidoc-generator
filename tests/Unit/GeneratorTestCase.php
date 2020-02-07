@@ -1,19 +1,55 @@
 <?php
 
+/** @noinspection ALL */
+
 namespace Mpociot\ApiDoc\Tests\Unit;
 
+use DMS\PHPUnitExtensions\ArraySubset\ArraySubsetAsserts;
 use Illuminate\Support\Arr;
-use Orchestra\Testbench\TestCase;
-use Mpociot\ApiDoc\Tools\Generator;
-use Mpociot\ApiDoc\Tools\DocumentationConfig;
 use Mpociot\ApiDoc\ApiDocGeneratorServiceProvider;
+use Mpociot\ApiDoc\Extracting\Generator;
+use Mpociot\ApiDoc\Tests\Fixtures\TestController;
+use Mpociot\ApiDoc\Tests\Fixtures\TestUser;
+use Mpociot\ApiDoc\Tools\DocumentationConfig;
+use Orchestra\Testbench\TestCase;
 
 abstract class GeneratorTestCase extends TestCase
 {
+    use ArraySubsetAsserts;
+
     /**
-     * @var \Mpociot\ApiDoc\Tools\Generator
+     * @var \Mpociot\ApiDoc\Extracting\Generator
      */
     protected $generator;
+    private $config = [
+        'strategies' => [
+            'metadata' => [
+                \Mpociot\ApiDoc\Extracting\Strategies\Metadata\GetFromDocBlocks::class,
+            ],
+            'urlParameters' => [
+                \Mpociot\ApiDoc\Extracting\Strategies\UrlParameters\GetFromUrlParamTag::class,
+            ],
+            'queryParameters' => [
+                \Mpociot\ApiDoc\Extracting\Strategies\QueryParameters\GetFromQueryParamTag::class,
+            ],
+            'headers' => [
+                \Mpociot\ApiDoc\Extracting\Strategies\RequestHeaders\GetFromRouteRules::class,
+            ],
+            'bodyParameters' => [
+                \Mpociot\ApiDoc\Extracting\Strategies\BodyParameters\GetFromBodyParamTag::class,
+            ],
+            'responses' => [
+                \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseTransformerTags::class,
+                \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseResponseTag::class,
+                \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseResponseFileTag::class,
+                \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseApiResourceTags::class,
+                \Mpociot\ApiDoc\Extracting\Strategies\Responses\ResponseCalls::class,
+            ],
+        ],
+        'default_group' => 'general',
+    ];
+
+    public static $globalValue = null;
 
     protected function getPackageProviders($app)
     {
@@ -25,11 +61,20 @@ abstract class GeneratorTestCase extends TestCase
     /**
      * Setup the test environment.
      */
-    public function setUp()
+    public function setUp(): void
     {
         parent::setUp();
 
-        $this->generator = new Generator();
+        $factory = app(\Illuminate\Database\Eloquent\Factory::class);
+        $factory->define(TestUser::class, function () {
+            return [
+                'id' => 4,
+                'first_name' => 'Tested',
+                'last_name' => 'Again',
+                'email' => 'a@b.com',
+            ];
+        });
+        $this->generator = new Generator(new DocumentationConfig($this->config));
     }
 
     /** @test */
@@ -38,8 +83,8 @@ abstract class GeneratorTestCase extends TestCase
         $route = $this->createRoute('GET', '/api/test', 'withEndpointDescription');
         $parsed = $this->generator->processRoute($route);
 
-        $this->assertSame('Example title.', $parsed['title']);
-        $this->assertSame("This will be the long description.\nIt can also be multiple lines long.", $parsed['description']);
+        $this->assertSame('Example title.', $parsed['metadata']['title']);
+        $this->assertSame("This will be the long description.\nIt can also be multiple lines long.", $parsed['metadata']['description']);
     }
 
     /** @test */
@@ -74,12 +119,54 @@ abstract class GeneratorTestCase extends TestCase
             'yet_another_param' => [
                 'type' => 'object',
                 'required' => true,
-                'description' => '',
+                'description' => 'Some object params.',
+            ],
+            'yet_another_param.name' => [
+                'type' => 'string',
+                'description' => 'Subkey in the object param.',
+                'required' => true,
             ],
             'even_more_param' => [
                 'type' => 'array',
                 'required' => false,
+                'description' => 'Some array params.',
+            ],
+            'even_more_param.*' => [
+                'type' => 'float',
+                'description' => 'Subkey in the array param.',
+                'required' => false,
+            ],
+            'book.name' => [
+                'type' => 'string',
                 'description' => '',
+                'required' => false,
+            ],
+            'book.author_id' => [
+                'type' => 'integer',
+                'description' => '',
+                'required' => false,
+            ],
+            'book[pages_count]' => [
+                'type' => 'integer',
+                'description' => '',
+                'required' => false,
+            ],
+            'ids.*' => [
+                'type' => 'integer',
+                'description' => '',
+                'required' => false,
+            ],
+            'users.*.first_name' => [
+                'type' => 'string',
+                'description' => 'The first name of the user.',
+                'required' => false,
+                'value' => 'John',
+            ],
+            'users.*.last_name' => [
+                'type' => 'string',
+                'description' => 'The last name of the user.',
+                'required' => false,
+                'value' => 'Doe',
             ],
         ], $bodyParameters);
     }
@@ -247,7 +334,7 @@ abstract class GeneratorTestCase extends TestCase
     public function can_parse_route_group()
     {
         $route = $this->createRoute('GET', '/api/test', 'dummy');
-        $routeGroup = $this->generator->processRoute($route)['groupName'];
+        $routeGroup = $this->generator->processRoute($route)['metadata']['groupName'];
 
         $this->assertSame('Group A', $routeGroup);
     }
@@ -257,37 +344,37 @@ abstract class GeneratorTestCase extends TestCase
     {
         $route = $this->createRoute('GET', '/group/1', 'withGroupOverride');
         $parsedRoute = $this->generator->processRoute($route);
-        $this->assertSame('Group B', $parsedRoute['groupName']);
-        $this->assertSame('', $parsedRoute['groupDescription']);
+        $this->assertSame('Group B', $parsedRoute['metadata']['groupName']);
+        $this->assertSame('', $parsedRoute['metadata']['groupDescription']);
 
         $route = $this->createRoute('GET', '/group/2', 'withGroupOverride2');
         $parsedRoute = $this->generator->processRoute($route);
-        $this->assertSame('Group B', $parsedRoute['groupName']);
-        $this->assertSame('', $parsedRoute['groupDescription']);
-        $this->assertSame('This is also in Group B. No route description. Route title before gropp.', $parsedRoute['title']);
+        $this->assertSame('Group B', $parsedRoute['metadata']['groupName']);
+        $this->assertSame('', $parsedRoute['metadata']['groupDescription']);
+        $this->assertSame('This is also in Group B. No route description. Route title before gropp.', $parsedRoute['metadata']['title']);
 
         $route = $this->createRoute('GET', '/group/3', 'withGroupOverride3');
         $parsedRoute = $this->generator->processRoute($route);
-        $this->assertSame('Group B', $parsedRoute['groupName']);
-        $this->assertSame('', $parsedRoute['groupDescription']);
-        $this->assertSame('This is also in Group B. Route title after group.', $parsedRoute['title']);
+        $this->assertSame('Group B', $parsedRoute['metadata']['groupName']);
+        $this->assertSame('', $parsedRoute['metadata']['groupDescription']);
+        $this->assertSame('This is also in Group B. Route title after group.', $parsedRoute['metadata']['title']);
 
         $route = $this->createRoute('GET', '/group/4', 'withGroupOverride4');
         $parsedRoute = $this->generator->processRoute($route);
-        $this->assertSame('Group C', $parsedRoute['groupName']);
-        $this->assertSame('Group description after group.', $parsedRoute['groupDescription']);
-        $this->assertSame('This is in Group C. Route title before group.', $parsedRoute['title']);
+        $this->assertSame('Group C', $parsedRoute['metadata']['groupName']);
+        $this->assertSame('Group description after group.', $parsedRoute['metadata']['groupDescription']);
+        $this->assertSame('This is in Group C. Route title before group.', $parsedRoute['metadata']['title']);
     }
 
     /** @test */
     public function can_parse_auth_tags()
     {
         $route = $this->createRoute('GET', '/api/test', 'withAuthenticatedTag');
-        $authenticated = $this->generator->processRoute($route)['authenticated'];
+        $authenticated = $this->generator->processRoute($route)['metadata']['authenticated'];
         $this->assertTrue($authenticated);
 
         $route = $this->createRoute('GET', '/api/test', 'dummy');
-        $authenticated = $this->generator->processRoute($route)['authenticated'];
+        $authenticated = $this->generator->processRoute($route)['metadata']['authenticated'];
         $this->assertFalse($authenticated);
     }
 
@@ -312,11 +399,103 @@ abstract class GeneratorTestCase extends TestCase
     }
 
     /** @test */
+    public function can_parse_apiresource_tags()
+    {
+        $route = $this->createRoute('POST', '/withEloquentApiResource', 'withEloquentApiResource');
+
+        $config = $this->config;
+        $config['strategies']['responses'] = [\Mpociot\ApiDoc\Extracting\Strategies\Responses\UseApiResourceTags::class];
+        $generator = new Generator(new DocumentationConfig($config));
+        $parsed = $this->generator->processRoute($route);
+
+        $response = Arr::first($parsed['responses']);
+        $this->assertTrue(is_array($parsed));
+        $this->assertArrayHasKey('showresponse', $parsed);
+        $this->assertTrue($parsed['showresponse']);
+        $this->assertTrue(is_array($response));
+        $this->assertEquals(200, $response['status']);
+        $this->assertArraySubset([
+            'data' => [
+                'id' => 4,
+                'name' => 'Tested Again',
+                'email' => 'a@b.com',
+            ],
+        ], json_decode($response['content'], true));
+    }
+
+    /** @test */
+    public function can_parse_apiresourcecollection_tags()
+    {
+        $route = $this->createRoute('POST', '/withEloquentApiResourceCollection', 'withEloquentApiResourceCollection');
+
+        $config = $this->config;
+        $config['strategies']['responses'] = [\Mpociot\ApiDoc\Extracting\Strategies\Responses\UseApiResourceTags::class];
+        $generator = new Generator(new DocumentationConfig($config));
+        $parsed = $this->generator->processRoute($route);
+
+        $response = Arr::first($parsed['responses']);
+        $this->assertTrue(is_array($parsed));
+        $this->assertArrayHasKey('showresponse', $parsed);
+        $this->assertTrue($parsed['showresponse']);
+        $this->assertTrue(is_array($response));
+        $this->assertEquals(200, $response['status']);
+        $content = json_decode($response['content'], true);
+        $this->assertIsArray($content);
+        $this->assertArraySubset([
+            'id' => 4,
+            'name' => 'Tested Again',
+            'email' => 'a@b.com',
+        ], $content['data'][0]);
+        $this->assertArraySubset([
+            'id' => 4,
+            'name' => 'Tested Again',
+            'email' => 'a@b.com',
+        ], $content['data'][1]);
+    }
+
+    /** @test */
+    public function can_parse_apiresourcecollection_tags_with_collection_class()
+    {
+        $route = $this->createRoute('POST', '/withEloquentApiResourceCollectionClass', 'withEloquentApiResourceCollectionClass');
+
+        $config = $this->config;
+        $config['strategies']['responses'] = [\Mpociot\ApiDoc\Extracting\Strategies\Responses\UseApiResourceTags::class];
+        $generator = new Generator(new DocumentationConfig($config));
+        $parsed = $this->generator->processRoute($route);
+
+        $response = Arr::first($parsed['responses']);
+        $this->assertTrue(is_array($parsed));
+        $this->assertArrayHasKey('showresponse', $parsed);
+        $this->assertTrue($parsed['showresponse']);
+        $this->assertTrue(is_array($response));
+        $this->assertEquals(200, $response['status']);
+        $content = json_decode($response['content'], true);
+        $this->assertIsArray($content);
+        $this->assertArraySubset([
+            'data' => [
+                [
+                    'id' => 4,
+                    'name' => 'Tested Again',
+                    'email' => 'a@b.com',
+                ],
+                [
+                    'id' => 4,
+                    'name' => 'Tested Again',
+                    'email' => 'a@b.com',
+                ],
+            ],
+            'links' => [
+                'self' => 'link-value',
+            ],
+        ], $content);
+    }
+
+    /** @test */
     public function can_parse_response_tag()
     {
         $route = $this->createRoute('POST', '/responseTag', 'withResponseTag');
         $parsed = $this->generator->processRoute($route);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -337,7 +516,7 @@ abstract class GeneratorTestCase extends TestCase
     {
         $route = $this->createRoute('POST', '/responseTag', 'withResponseTagAndStatusCode');
         $parsed = $this->generator->processRoute($route);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -358,20 +537,20 @@ abstract class GeneratorTestCase extends TestCase
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
         $this->assertTrue($parsed['showresponse']);
-        $this->assertTrue(is_array($parsed['response'][0]));
-        $this->assertEquals(200, $parsed['response'][0]['status']);
+        $this->assertTrue(is_array($parsed['responses'][0]));
+        $this->assertEquals(200, $parsed['responses'][0]['status']);
         $this->assertArraySubset([
             'id' => 4,
             'name' => 'banana',
             'color' => 'red',
             'weight' => '1 kg',
             'delicious' => true,
-        ], json_decode($parsed['response'][0]['content'], true));
-        $this->assertTrue(is_array($parsed['response'][1]));
-        $this->assertEquals(401, $parsed['response'][1]['status']);
+        ], json_decode($parsed['responses'][0]['content'], true));
+        $this->assertTrue(is_array($parsed['responses'][1]));
+        $this->assertEquals(401, $parsed['responses'][1]['status']);
         $this->assertArraySubset([
             'message' => 'Unauthorized',
-        ], json_decode($parsed['response'][1]['content'], true));
+        ], json_decode($parsed['responses'][1]['content'], true));
     }
 
     /**
@@ -386,7 +565,7 @@ abstract class GeneratorTestCase extends TestCase
         config(['apidoc.fractal.serializer' => $serializer]);
         $route = $this->createRoute('GET', '/transformerTag', 'transformerTag');
         $parsed = $this->generator->processRoute($route);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -394,8 +573,8 @@ abstract class GeneratorTestCase extends TestCase
         $this->assertTrue(is_array($response));
         $this->assertEquals(200, $response['status']);
         $this->assertSame(
-            $response['content'],
-            $expected
+            $expected,
+            $response['content']
         );
     }
 
@@ -404,7 +583,7 @@ abstract class GeneratorTestCase extends TestCase
     {
         $route = $this->createRoute('GET', '/transformerTagWithModel', 'transformerTagWithModel');
         $parsed = $this->generator->processRoute($route);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -412,8 +591,26 @@ abstract class GeneratorTestCase extends TestCase
         $this->assertTrue(is_array($response));
         $this->assertEquals(200, $response['status']);
         $this->assertSame(
-            $response['content'],
-            '{"data":{"id":1,"description":"Welcome on this test versions","name":"TestName"}}'
+            '{"data":{"id":1,"description":"Welcome on this test versions","name":"TestName"}}',
+            $response['content']
+        );
+    }
+
+    /** @test */
+    public function can_parse_transformer_tag_with_status_code()
+    {
+        $route = $this->createRoute('GET', '/transformerTagWithStatusCode', 'transformerTagWithStatusCode');
+        $parsed = $this->generator->processRoute($route);
+        $response = Arr::first($parsed['responses']);
+
+        $this->assertTrue(is_array($parsed));
+        $this->assertArrayHasKey('showresponse', $parsed);
+        $this->assertTrue($parsed['showresponse']);
+        $this->assertTrue(is_array($response));
+        $this->assertEquals(201, $response['status']);
+        $this->assertSame(
+            '{"data":{"id":1,"description":"Welcome on this test versions","name":"TestName"}}',
+            $response['content']
         );
     }
 
@@ -422,7 +619,7 @@ abstract class GeneratorTestCase extends TestCase
     {
         $route = $this->createRoute('GET', '/transformerCollectionTag', 'transformerCollectionTag');
         $parsed = $this->generator->processRoute($route);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -441,7 +638,7 @@ abstract class GeneratorTestCase extends TestCase
     {
         $route = $this->createRoute('GET', '/transformerCollectionTagWithModel', 'transformerCollectionTagWithModel');
         $parsed = $this->generator->processRoute($route);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -461,16 +658,16 @@ abstract class GeneratorTestCase extends TestCase
         $route = $this->createRoute('POST', '/shouldFetchRouteResponse', 'shouldFetchRouteResponse', true);
 
         $rules = [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+            ],
             'response_calls' => [
                 'methods' => ['*'],
-                'headers' => [
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json',
-                ],
             ],
         ];
         $parsed = $this->generator->processRoute($route, $rules);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -487,6 +684,52 @@ abstract class GeneratorTestCase extends TestCase
     }
 
     /** @test */
+    public function does_not_make_response_call_if_success_response_already_gotten()
+    {
+        $route = $this->createRoute('POST', '/withResponseTag', 'withResponseTag', true);
+
+        $rules = [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+            ],
+            'response_calls' => [
+                'methods' => ['*'],
+            ],
+        ];
+        $config = [
+            'strategies' => [
+                'responses' => [
+                    \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseResponseTag::class,
+                    \Mpociot\ApiDoc\Extracting\Strategies\Responses\ResponseCalls::class,
+                ],
+            ],
+        ];
+        $generator = new Generator(new DocumentationConfig($config));
+        $parsed = $generator->processRoute($route, $rules);
+
+        $this->assertCount(1, $parsed['responses']);
+        $response = Arr::first($parsed['responses']);
+
+        $this->assertTrue(is_array($parsed));
+        $this->assertArrayHasKey('showresponse', $parsed);
+        $this->assertTrue($parsed['showresponse']);
+        $this->assertTrue(is_array($response));
+        $this->assertEquals(200, $response['status']);
+        $this->assertArraySubset([
+            'id' => 4,
+            'name' => 'banana',
+            'color' => 'red',
+            'weight' => '1 kg',
+            'delicious' => true,
+            'responseTag' => true,
+        ], json_decode($response['content'], true));
+
+        // This may probably not be the best way to test this, but 🤷‍♀️
+        $this->assertNull(static::$globalValue);
+    }
+
+    /** @test */
     public function can_override_config_during_response_call()
     {
         $route = $this->createRoute('POST', '/echoesConfig', 'echoesConfig', true);
@@ -497,7 +740,7 @@ abstract class GeneratorTestCase extends TestCase
             ],
         ];
         $parsed = $this->generator->processRoute($route, $rules);
-        $response = json_decode(Arr::first($parsed['response'])['content'], true);
+        $response = json_decode(Arr::first($parsed['responses'])['content'], true);
         $originalValue = $response['app.env'];
 
         $now = time();
@@ -510,78 +753,42 @@ abstract class GeneratorTestCase extends TestCase
             ],
         ];
         $parsed = $this->generator->processRoute($route, $rules);
-        $response = json_decode(Arr::first($parsed['response'])['content'], true);
+        $response = json_decode(Arr::first($parsed['responses'])['content'], true);
         $newValue = $response['app.env'];
         $this->assertEquals($now, $newValue);
         $this->assertNotEquals($originalValue, $newValue);
     }
 
     /** @test */
-    public function can_override_url_path_parameters_with_bindings()
+    public function can_override_url_path_parameters_with_urlparam_annotation()
     {
-        $route = $this->createRoute('POST', '/echoesUrlPathParameters/{param}', 'echoesUrlPathParameters', true);
-
-        $rand = rand();
+        $route = $this->createRoute('POST', '/echoesUrlParameters/{param}', 'echoesUrlParameters', true);
         $rules = [
             'response_calls' => [
                 'methods' => ['*'],
-                'bindings' => [
-                    '{param}' => $rand,
-                ],
             ],
         ];
         $parsed = $this->generator->processRoute($route, $rules);
-        $response = json_decode(Arr::first($parsed['response'])['content'], true);
-        $param = $response['param'];
-        $this->assertEquals($rand, $param);
+        $response = json_decode(Arr::first($parsed['responses'])['content'], true);
+        $this->assertEquals(4, $response['param']);
     }
 
     /** @test */
-    public function replaces_optional_url_path_parameters_with_bindings()
+    public function ignores_or_inserts_optional_url_path_parameters_according_to_annotations()
     {
-        $route = $this->createRoute('POST', '/echoesUrlPathParameters/{param?}', 'echoesUrlPathParameters', true);
+        $route = $this->createRoute('POST', '/echoesUrlParameters/{param}/{param2?}/{param3}/{param4?}', 'echoesUrlParameters', true);
 
-        $rand = rand();
         $rules = [
             'response_calls' => [
                 'methods' => ['*'],
-                'bindings' => [
-                    '{param?}' => $rand,
-                ],
             ],
         ];
         $parsed = $this->generator->processRoute($route, $rules);
-        $response = json_decode(Arr::first($parsed['response'])['content'], true);
-        $param = $response['param'];
-        $this->assertEquals($rand, $param);
-    }
-
-    /** @test */
-    public function uses_correct_bindings_by_prefix()
-    {
-        $route1 = $this->createRoute('POST', '/echoesUrlPathParameters/first/{param}', 'echoesUrlPathParameters', true);
-        $route2 = $this->createRoute('POST', '/echoesUrlPathParameters/second/{param}', 'echoesUrlPathParameters', true);
-
-        $rand1 = rand();
-        $rand2 = rand();
-        $rules = [
-            'response_calls' => [
-                'methods' => ['*'],
-                'bindings' => [
-                    'first/{param}' => $rand1,
-                    'second/{param}' => $rand2,
-                ],
-            ],
-        ];
-        $parsed = $this->generator->processRoute($route1, $rules);
-        $response = json_decode(Arr::first($parsed['response'])['content'], true);
-        $param = $response['param'];
-        $this->assertEquals($rand1, $param);
-
-        $parsed = $this->generator->processRoute($route2, $rules);
-        $response = json_decode(Arr::first($parsed['response'])['content'], true);
-        $param = $response['param'];
-        $this->assertEquals($rand2, $param);
+        $response = json_decode(Arr::first($parsed['responses'])['content'], true);
+        $this->assertEquals(4, $response['param']);
+        $this->assertNotNull($response['param2']);
+        $this->assertEquals(1, $response['param3']);
+        $this->assertNull($response['param4']);
     }
 
     /** @test */
@@ -594,7 +801,7 @@ abstract class GeneratorTestCase extends TestCase
 
         $route = $this->createRoute('GET', '/responseFileTag', 'responseFileTag');
         $parsed = $this->generator->processRoute($route);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -619,7 +826,7 @@ abstract class GeneratorTestCase extends TestCase
 
         $route = $this->createRoute('GET', '/responseFileTagAndCustomJson', 'responseFileTagAndCustomJson');
         $parsed = $this->generator->processRoute($route);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -651,16 +858,16 @@ abstract class GeneratorTestCase extends TestCase
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
         $this->assertTrue($parsed['showresponse']);
-        $this->assertTrue(is_array($parsed['response'][0]));
-        $this->assertEquals(200, $parsed['response'][0]['status']);
+        $this->assertTrue(is_array($parsed['responses'][0]));
+        $this->assertEquals(200, $parsed['responses'][0]['status']);
         $this->assertSame(
-            $parsed['response'][0]['content'],
+            $parsed['responses'][0]['content'],
             $successFixtureFileJson
         );
-        $this->assertTrue(is_array($parsed['response'][1]));
-        $this->assertEquals(401, $parsed['response'][1]['status']);
+        $this->assertTrue(is_array($parsed['responses'][1]));
+        $this->assertEquals(401, $parsed['responses'][1]['status']);
         $this->assertSame(
-            $parsed['response'][1]['content'],
+            $parsed['responses'][1]['content'],
             $errorFixtureFileJson
         );
 
@@ -683,7 +890,7 @@ abstract class GeneratorTestCase extends TestCase
         // Examples should have different values
         $this->assertNotEquals(count($results), 1);
 
-        $generator = new Generator(new DocumentationConfig(['faker_seed' => 12345]));
+        $generator = new Generator(new DocumentationConfig($this->config + ['faker_seed' => 12345]));
         $results = [];
         $results[$generator->processRoute($route)['cleanBodyParameters'][$paramName]] = true;
         $results[$generator->processRoute($route)['cleanBodyParameters'][$paramName]] = true;
@@ -699,26 +906,23 @@ abstract class GeneratorTestCase extends TestCase
         $route = $this->createRoute('PUT', '/echo/{id}', 'shouldFetchRouteResponseWithEchoedSettings', true);
 
         $rules = [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+                'header' => 'value',
+            ],
             'response_calls' => [
                 'methods' => ['*'],
-                'headers' => [
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json',
-                    'header' => 'value',
-                ],
-                'bindings' => [
-                    '{id}' => 3,
-                ],
-                'query' => [
+                'queryParams' => [
                     'queryParam' => 'queryValue',
                 ],
-                'body' => [
+                'bodyParams' => [
                     'bodyParam' => 'bodyValue',
                 ],
             ],
         ];
         $parsed = $this->generator->processRoute($route, $rules);
-        $response = Arr::first($parsed['response']);
+        $response = Arr::first($parsed['responses']);
 
         $this->assertTrue(is_array($parsed));
         $this->assertArrayHasKey('showresponse', $parsed);
@@ -726,7 +930,6 @@ abstract class GeneratorTestCase extends TestCase
         $this->assertTrue(is_array($response));
         $this->assertEquals(200, $response['status']);
         $responseContent = json_decode($response['content'], true);
-        $this->assertEquals(3, $responseContent['{id}']);
         $this->assertEquals('queryValue', $responseContent['queryParam']);
         $this->assertEquals('bodyValue', $responseContent['bodyParam']);
         $this->assertEquals('value', $responseContent['header']);
@@ -739,13 +942,13 @@ abstract class GeneratorTestCase extends TestCase
 
         $parsed = $this->generator->processRoute($route);
 
-        $this->assertSame('Example title.', $parsed['title']);
-        $this->assertSame("This will be the long description.\nIt can also be multiple lines long.", $parsed['description']);
+        $this->assertSame('Example title.', $parsed['metadata']['title']);
+        $this->assertSame("This will be the long description.\nIt can also be multiple lines long.", $parsed['metadata']['description']);
     }
 
-    abstract public function createRoute(string $httpMethod, string $path, string $controllerMethod, $register = false);
+    abstract public function createRoute(string $httpMethod, string $path, string $controllerMethod, $register = false, $class = TestController::class);
 
-    abstract public function createRouteUsesArray(string $httpMethod, string $path, string $controllerMethod, $register = false);
+    abstract public function createRouteUsesArray(string $httpMethod, string $path, string $controllerMethod, $register = false, $class = TestController::class);
 
     public function dataResources()
     {
