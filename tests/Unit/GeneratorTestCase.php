@@ -38,6 +38,9 @@ abstract class GeneratorTestCase extends TestCase
             'bodyParameters' => [
                 \Mpociot\ApiDoc\Extracting\Strategies\BodyParameters\GetFromBodyParamTag::class,
             ],
+            'responseParameters' => [
+                \Mpociot\ApiDoc\Extracting\Strategies\ResponseParameters\GetFromResponseParamTag::class,
+            ],
             'responses' => [
                 \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseTransformerTags::class,
                 \Mpociot\ApiDoc\Extracting\Strategies\Responses\UseResponseTag::class,

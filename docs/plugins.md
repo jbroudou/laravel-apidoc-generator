@@ -8,6 +8,7 @@ Route processing is performed in six stages:
 - queryParameters
 - headers (headers to be added to example request and response calls)
 - bodyParameters
+- responseParameters
 - responses
 
 For each stage, the Generator attempts the specified strategies to fetch data. The Generator will call of the strategies configured, progressively combining their results together before to produce the final output of that stage.
